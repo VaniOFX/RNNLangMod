@@ -9,32 +9,38 @@ import matplotlib.pyplot as plt
 def train():
     model.train()
     total_loss = 0
-    train_data_size = len(train_loader.dataset)
-    for data, label in train_loader:
+    data_length = len(train_loader.dataset)
+    for idx, (data, label) in enumerate(train_loader):
         data, label = Variable(data).cuda(), Variable(label).cuda()
         outputs = model(data)
         optimizer.zero_grad()
-        print(outputs.size())
-        print(label.size())
-        loss = loss_function(outputs, label)
+        if hp.m2m:
+            loss = loss_function(outputs.view(-1, outputs.size(-1)), label.view(-1))
+        else:
+            loss = loss_function(outputs, label)
         total_loss += loss.data[0]
         loss.backward()
         optimizer.step()
-    return total_loss / train_data_size
+        if idx % 40 == 0:
+            print("The loss is", loss.data[0] / hp.bsz)
 
+    return total_loss / data_length
 
 def test():
     model.eval()
-    correct = 0
     train_data_size = len(test_loader.dataset)
+    total_loss = 0
     for data, label in test_loader:
         data, label = Variable(data, volatile=True).cuda(), Variable(label).cuda()
         outputs = model(data)
-        pred = outputs.data.max(1, keepdim=True)[1]
-        correct += pred.eq(label.data.view_as(pred)).cpu().sum()
+        if hp.m2m:
+            loss = loss_function(outputs.view(-1, outputs.size(-1)), label.view(-1))
+        else:
+            loss = loss_function(outputs, label)
+        total_loss += loss
 
-    print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
-        correct, train_data_size, 100. * correct / train_data_size))
+    return total_loss / train_data_size
+
 
 
 def calc_perplexity(loss):
@@ -46,12 +52,12 @@ if __name__ == "__main__":
     perplexities = []
 
     for epoch in range(hp.epochs):
-        print("Epoch [{}] starting.. get ready\n".format(epoch))
-        loss_data = train()
-        test()
-        print("The perplexity score for this epoch is {}".format(calc_perplexity(loss_data)))
-        losses.append(loss_data)
-        perplexities.append(calc_perplexity(loss_data))
+        print("Epoch [{}] starting.. get ready\n".format(epoch+1))
+        train_loss = train()
+        test_loss = test()
+        print("The perplexity score for this epoch is {}\n".format(calc_perplexity(test_loss)))
+        losses.append(train_loss)
+        perplexities.append(calc_perplexity(test_loss))
 
     plt.plot(list(range(1, hp.epochs+1)), losses)
     plt.xlabel("Epochs")
